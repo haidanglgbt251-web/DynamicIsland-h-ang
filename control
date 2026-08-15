@@ -1,0 +1,9 @@
+Package: com.yourname.dynamicislandhome
+Name: DynamicIslandHome
+Depends: mobilesubstrate
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Dynamic Island cho iOS
+Maintainer: YourName
+Author: YourName
+Section: Tweaks
