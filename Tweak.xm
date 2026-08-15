@@ -6,12 +6,13 @@ extern "C" {
 #endif
     void MRMediaRemoteRegisterForNowPlayingNotifications(dispatch_queue_t queue);
     void MRMediaRemoteGetNowPlayingInfo(dispatch_queue_t queue, void (^completed)(CFDictionaryRef information));
+    void MRMediaRemoteSendCommand(int command, id userInfo);
 #ifdef __cplusplus
 }
 #endif
 
 // ==========================================
-// PASS-THROUGH WINDOW (HỖ TRỢ CẢ MÀN HÌNH KHÓA)
+// PASS-THROUGH WINDOW (HIỂN THỊ TRÊN CẢ LOCKSCREEN & NOTIFICATION CENTER)
 // ==========================================
 
 @interface DIHPassThroughWindow : UIWindow
@@ -23,10 +24,10 @@ extern "C" {
     if (island) {
         CGPoint pointInIsland = [island convertPoint:point fromView:self];
         if ([island pointInside:pointInIsland withEvent:nil]) {
-            return YES; // Bấm trúng đảo -> Nhận cảm ứng
+            return YES; 
         }
     }
-    return NO; // Bấm ra ngoài (đồng hồ màn hình khóa, thông báo) -> Xuyên xuống dưới
+    return NO; // Bấm ra ngoài (thông báo, đồng hồ màn hình khóa) -> Xuyên xuống dưới
 }
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
@@ -49,27 +50,24 @@ extern "C" {
 @property (nonatomic, strong) UILabel *titleLabel;             
 @property (nonatomic, strong) UILabel *subtitleLabel;          
 @property (nonatomic, strong) UIView *recordingDotView;        
-@property (nonatomic, strong) UIImageView *faceIDIconView;      
-@property (nonatomic, strong) UIView *siriGlowView;            
+
+@property (nonatomic, strong) UIButton *playPauseButton;
+@property (nonatomic, strong) UIButton *prevButton;
+@property (nonatomic, strong) UIButton *nextButton;
 
 @property (nonatomic, strong) UIButton *acceptCallButton;
 @property (nonatomic, strong) UIButton *declineCallButton;
 
 @property (nonatomic, assign) BOOL isExpanded;
 @property (nonatomic, assign) BOOL isFloatingMode;
-@property (nonatomic, assign) BOOL isRecording;
 @property (nonatomic, strong) NSString *currentMode; 
 
 + (instancetype)sharedInstance;
 - (void)expandIsland;
 - (void)collapseIsland;
-- (void)toggleFloatingMode;
+- (void)updateLayoutForCurrentDevice;
 - (void)updateNowPlayingInfo;
-- (void)updateBatteryState;
 - (void)showIncomingCallWithName:(NSString *)callerName number:(NSString *)number;
-- (void)setRecordingState:(BOOL)recording;
-- (void)triggerFaceIDAnimation;
-- (void)setSiriActive:(BOOL)active;
 
 @end
 
@@ -123,24 +121,32 @@ extern "C" {
         self.subtitleLabel.alpha = 0.0;
         [self addSubview:self.subtitleLabel];
 
+        self.playPauseButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        [self.playPauseButton setImage:[UIImage systemImageNamed:@"pause.fill"] forState:UIControlStateNormal];
+        [self.playPauseButton setTintColor:[UIColor whiteColor]];
+        [self.playPauseButton addTarget:self action:@selector(togglePlayPause) forControlEvents:UIControlEventTouchUpInside];
+        self.playPauseButton.alpha = 0.0;
+        [self addSubview:self.playPauseButton];
+
+        self.prevButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        [self.prevButton setImage:[UIImage systemImageNamed:@"backward.fill"] forState:UIControlStateNormal];
+        [self.prevButton setTintColor:[UIColor whiteColor]];
+        [self.prevButton addTarget:self action:@selector(skipPrev) forControlEvents:UIControlEventTouchUpInside];
+        self.prevButton.alpha = 0.0;
+        [self addSubview:self.prevButton];
+
+        self.nextButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        [self.nextButton setImage:[UIImage systemImageNamed:@"forward.fill"] forState:UIControlStateNormal];
+        [self.nextButton setTintColor:[UIColor whiteColor]];
+        [self.nextButton addTarget:self action:@selector(skipNext) forControlEvents:UIControlEventTouchUpInside];
+        self.nextButton.alpha = 0.0;
+        [self addSubview:self.nextButton];
+
         self.recordingDotView = [[UIView alloc] init];
         self.recordingDotView.backgroundColor = [UIColor systemRedColor];
         self.recordingDotView.layer.cornerRadius = 4;
         self.recordingDotView.alpha = 0.0;
         [self addSubview:self.recordingDotView];
-
-        self.faceIDIconView = [[UIImageView alloc] init];
-        self.faceIDIconView.image = [UIImage systemImageNamed:@"faceid"];
-        self.faceIDIconView.tintColor = [UIColor systemGreenColor];
-        self.faceIDIconView.contentMode = UIViewContentModeScaleAspectFit;
-        self.faceIDIconView.alpha = 0.0;
-        [self addSubview:self.faceIDIconView];
-
-        self.siriGlowView = [[UIView alloc] init];
-        self.siriGlowView.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:0.4];
-        self.siriGlowView.layer.cornerRadius = 20;
-        self.siriGlowView.alpha = 0.0;
-        [self insertSubview:self.siriGlowView atIndex:0];
 
         self.acceptCallButton = [UIButton buttonWithType:UIButtonTypeCustom];
         self.acceptCallButton.backgroundColor = [UIColor systemGreenColor];
@@ -163,106 +169,72 @@ extern "C" {
 }
 
 - (void)updateLayoutForCurrentDevice {
-    CGFloat screenWidth = [UIScreen mainScreen].bounds.size.width;
+    CGRect screenRect = [UIScreen mainScreen].bounds;
+    CGFloat screenWidth = MAX(screenRect.size.width, screenRect.size.height);
+    
+    UIInterfaceOrientation orientation = [[UIApplication sharedApplication] statusBarOrientation];
+    if (UIInterfaceOrientationIsLandscape(orientation)) {
+        screenWidth = MAX(screenRect.size.width, screenRect.size.height);
+    } else {
+        screenWidth = MIN(screenRect.size.width, screenRect.size.height);
+    }
+
     CGFloat islandWidth = 125.0; 
     CGFloat islandHeight = 36.0;
-    CGFloat topMargin = (screenWidth > 390) ? 12.0 : 8.0;
+    CGFloat topMargin = 8.0;
 
     self.frame = CGRectMake((screenWidth - islandWidth) / 2, topMargin, islandWidth, islandHeight);
     self.layer.cornerRadius = islandHeight / 2.0;
 
     self.leadingImageView.frame = CGRectMake(7, 6, 24, 24);
-    self.leadingImageView.layer.cornerRadius = 12;
+    self.leadingImageView.layer.cornerRadius = 6;
+    
     self.trailingImageView.frame = CGRectMake(islandWidth - 31, 6, 24, 24);
     self.recordingDotView.frame = CGRectMake(islandWidth - 20, 14, 8, 8);
 
     self.titleLabel.alpha = 0.0;
     self.subtitleLabel.alpha = 0.0;
+    self.playPauseButton.alpha = 0.0;
+    self.prevButton.alpha = 0.0;
+    self.nextButton.alpha = 0.0;
     self.acceptCallButton.alpha = 0.0;
     self.declineCallButton.alpha = 0.0;
-    self.faceIDIconView.alpha = 0.0;
-    self.siriGlowView.alpha = 0.0;
-    
-    if (![self.currentMode isEqualToString:@"Recording"]) {
-        self.currentMode = @"Idle";
-    }
-}
-
-- (void)triggerFaceIDAnimation {
-    self.currentMode = @"FaceID";
-    CGFloat screenWidth = [UIScreen mainScreen].bounds.size.width;
-    
-    [UIView animateWithDuration:0.5 delay:0 usingSpringWithDamping:0.62 initialSpringVelocity:0.8 options:UIViewAnimationOptionCurveEaseInOut animations:^{
-        self.frame = CGRectMake((screenWidth - 95) / 2, 10, 95, 95);
-        self.layer.cornerRadius = 30;
-        self.faceIDIconView.frame = CGRectMake(27, 27, 41, 41);
-        self.faceIDIconView.alpha = 1.0;
-    } completion:^(BOOL finished) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [UIView animateWithDuration:0.3 animations:^{
-                self.faceIDIconView.alpha = 0.0;
-            }];
-            [self collapseIsland];
-        });
-    }];
-}
-
-- (void)setSiriActive:(BOOL)active {
-    if (active) {
-        self.currentMode = @"Siri";
-        CGFloat screenWidth = [UIScreen mainScreen].bounds.size.width;
-        
-        [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.7 initialSpringVelocity:0.6 options:UIViewAnimationOptionCurveEaseInOut animations:^{
-            self.frame = CGRectMake((screenWidth - 170) / 2, 10, 170, 44);
-            self.layer.cornerRadius = 22;
-            self.siriGlowView.frame = self.bounds;
-            self.siriGlowView.alpha = 0.85;
-            self.titleLabel.text = @"Siri đang nghe...";
-            self.titleLabel.frame = CGRectMake(22, 13, 130, 18);
-            self.titleLabel.alpha = 1.0;
-        } completion:nil];
-    } else {
-        [UIView animateWithDuration:0.35 animations:^{
-            self.siriGlowView.alpha = 0.0;
-        }];
-        [self collapseIsland];
-    }
-}
-
-- (void)setRecordingState:(BOOL)recording {
-    self.isRecording = recording;
-    if (recording) {
-        self.currentMode = @"Recording";
-        [UIView animateWithDuration:0.3 animations:^{
-            self.recordingDotView.alpha = 1.0;
-        }];
-    } else {
-        [UIView animateWithDuration:0.3 animations:^{
-            self.recordingDotView.alpha = 0.0;
-        }];
-        self.currentMode = @"Idle";
-    }
 }
 
 - (void)expandIsland {
-    CGFloat screenWidth = [UIScreen mainScreen].bounds.size.width;
+    CGRect screenRect = [UIScreen mainScreen].bounds;
+    UIInterfaceOrientation orientation = [[UIApplication sharedApplication] statusBarOrientation];
+    CGFloat screenWidth = UIInterfaceOrientationIsLandscape(orientation) ? MAX(screenRect.size.width, screenRect.size.height) : MIN(screenRect.size.width, screenRect.size.height);
+    
     CGFloat expandedWidth = screenWidth - 32;
-    CGFloat expandedHeight = 165.0;
+    CGFloat expandedHeight = 130.0;
     
     [UIView animateWithDuration:0.5 delay:0 usingSpringWithDamping:0.72 initialSpringVelocity:0.7 options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionCurveEaseInOut animations:^{
-        self.frame = CGRectMake(16, 10, expandedWidth, expandedHeight);
-        self.layer.cornerRadius = 38;
+        self.frame = CGRectMake(16, 8, expandedWidth, expandedHeight);
+        self.layer.cornerRadius = 32;
         
-        self.leadingImageView.frame = CGRectMake(18, 18, 52, 52);
-        self.leadingImageView.layer.cornerRadius = 14;
+        self.leadingImageView.frame = CGRectMake(16, 16, 52, 52);
+        self.leadingImageView.layer.cornerRadius = 10;
         
-        self.titleLabel.frame = CGRectMake(82, 22, expandedWidth - 100, 22);
-        self.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+        self.titleLabel.frame = CGRectMake(80, 16, expandedWidth - 96, 20);
+        self.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
         self.titleLabel.alpha = 1.0;
         
-        self.subtitleLabel.frame = CGRectMake(82, 46, expandedWidth - 100, 18);
-        self.subtitleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+        self.subtitleLabel.frame = CGRectMake(80, 38, expandedWidth - 96, 18);
+        self.subtitleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
         self.subtitleLabel.alpha = 1.0;
+        
+        CGFloat btnY = 80;
+        CGFloat centerX = expandedWidth / 2;
+        self.prevButton.frame = CGRectMake(centerX - 60, btnY, 30, 30);
+        self.prevButton.alpha = 1.0;
+        
+        self.playPauseButton.frame = CGRectMake(centerX - 15, btnY, 30, 30);
+        self.playPauseButton.alpha = 1.0;
+        
+        self.nextButton.frame = CGRectMake(centerX + 30, btnY, 30, 30);
+        self.nextButton.alpha = 1.0;
+        
     } completion:^(BOOL finished) {
         self.isExpanded = YES;
     }];
@@ -281,21 +253,23 @@ extern "C" {
     self.titleLabel.text = callerName ? callerName : @"Cuộc gọi đến";
     self.subtitleLabel.text = number ? number : @"Đang đổ chuông...";
     
-    CGFloat screenWidth = [UIScreen mainScreen].bounds.size.width;
+    CGRect screenRect = [UIScreen mainScreen].bounds;
+    UIInterfaceOrientation orientation = [[UIApplication sharedApplication] statusBarOrientation];
+    CGFloat screenWidth = UIInterfaceOrientationIsLandscape(orientation) ? MAX(screenRect.size.width, screenRect.size.height) : MIN(screenRect.size.width, screenRect.size.height);
     CGFloat expandedWidth = screenWidth - 32;
     
     [UIView animateWithDuration:0.5 delay:0 usingSpringWithDamping:0.7 initialSpringVelocity:0.6 options:UIViewAnimationOptionCurveEaseInOut animations:^{
-        self.frame = CGRectMake(16, 10, expandedWidth, 90.0);
-        self.layer.cornerRadius = 32;
+        self.frame = CGRectMake(16, 8, expandedWidth, 80.0);
+        self.layer.cornerRadius = 28;
         
-        self.titleLabel.frame = CGRectMake(20, 18, expandedWidth - 120, 20);
+        self.titleLabel.frame = CGRectMake(20, 16, expandedWidth - 110, 20);
         self.titleLabel.alpha = 1.0;
-        self.subtitleLabel.frame = CGRectMake(20, 40, expandedWidth - 120, 18);
+        self.subtitleLabel.frame = CGRectMake(20, 38, expandedWidth - 110, 18);
         self.subtitleLabel.alpha = 1.0;
 
-        self.declineCallButton.frame = CGRectMake(expandedWidth - 95, 27, 36, 36);
+        self.declineCallButton.frame = CGRectMake(expandedWidth - 90, 22, 36, 36);
         self.declineCallButton.alpha = 1.0;
-        self.acceptCallButton.frame = CGRectMake(expandedWidth - 50, 27, 36, 36);
+        self.acceptCallButton.frame = CGRectMake(expandedWidth - 46, 22, 36, 36);
         self.acceptCallButton.alpha = 1.0;
     } completion:nil];
 }
@@ -317,7 +291,6 @@ extern "C" {
 
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
     if (!self.isFloatingMode && !self.isExpanded) return;
-
     CGPoint translation = [pan translationInView:self.superview];
     self.center = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
     [pan setTranslation:CGPointZero inView:self.superview];
@@ -325,19 +298,14 @@ extern "C" {
 
 - (void)toggleFloatingMode {
     self.isFloatingMode = !self.isFloatingMode;
-    
-    [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.75 initialSpringVelocity:0.5 options:UIViewAnimationOptionCurveEaseInOut animations:^{
+    [UIView animateWithDuration:0.45 animations:^{
         if (self.isFloatingMode) {
-            self.frame = CGRectMake(20, 80, 150, 75);
-            self.layer.cornerRadius = 24;
-            self.titleLabel.alpha = 1.0;
-            self.titleLabel.frame = CGRectMake(48, 16, 90, 18);
-            self.subtitleLabel.alpha = 1.0;
-            self.subtitleLabel.frame = CGRectMake(48, 36, 90, 16);
+            self.frame = CGRectMake(20, 80, 140, 65);
+            self.layer.cornerRadius = 20;
         } else {
             [self updateLayoutForCurrentDevice];
         }
-    } completion:nil];
+    }];
 }
 
 - (void)setupMediaRemoteNotifications {
@@ -346,7 +314,7 @@ extern "C" {
 }
 
 - (void)updateNowPlayingInfo {
-    if ([self.currentMode isEqualToString:@"Call"] || [self.currentMode isEqualToString:@"FaceID"] || self.isRecording) return;
+    if ([self.currentMode isEqualToString:@"Call"]) return;
     
     MRMediaRemoteGetNowPlayingInfo(dispatch_get_main_queue(), ^(CFDictionaryRef information) {
         NSDictionary *info = (__bridge NSDictionary *)information;
@@ -357,9 +325,11 @@ extern "C" {
             
             if (title) {
                 self.titleLabel.text = title;
-                self.subtitleLabel.text = artist ? artist : @"Unknown Artist";
+                self.subtitleLabel.text = artist ? artist : @"Đang phát";
                 if (artworkData) {
-                    self.leadingImageView.image = [UIImage imageWithData:artworkData];
+                    UIImage *artImage = [UIImage imageWithData:artworkData];
+                    self.leadingImageView.image = artImage;
+                    self.trailingImageView.image = artImage;
                 }
                 self.currentMode = @"Music";
             }
@@ -367,69 +337,26 @@ extern "C" {
     });
 }
 
-- (void)updateBatteryState {
-    if ([self.currentMode isEqualToString:@"Call"] || [self.currentMode isEqualToString:@"FaceID"]) return;
-    
-    UIDevice *device = [UIDevice currentDevice];
-    [device setBatteryMonitoringEnabled:YES];
-    
-    float level = [device batteryLevel] * 100;
-    BOOL isCharging = ([device batteryState] == UIDeviceBatteryStateCharging || [device batteryState] == UIDeviceBatteryStateFull);
-    
-    self.titleLabel.text = [NSString stringWithFormat:@"%.0f%%", level];
-    self.subtitleLabel.text = isCharging ? @"Đang sạc..." : @"Pin";
-    self.currentMode = @"Battery";
-    
-    [self expandIsland];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self collapseIsland];
-    });
-}
+- (void)togglePlayPause { MRMediaRemoteSendCommand(0, nil); }
+- (void)skipPrev { MRMediaRemoteSendCommand(4, nil); }
+- (void)skipNext { MRMediaRemoteSendCommand(3, nil); }
 
 @end
 
 // ==========================================
-// HOOKS ĐẢM BẢO HIỂN THỊ CẢ MÀN HÌNH KHÓA
+// HOOKS ĐẢM BẢO HIỂN THỊ MỌI LÚC (LOCKSCREEN & NOTIFICATION CENTER)
 // ==========================================
 
 static DIHPassThroughWindow *islandWindow = nil;
 
-%hook SBLockScreenManager
-- (void)lockScreenViewDidAppear:(id)arg1 {
+%hook UIWindow
+- (void)layoutSubviews {
     %orig;
-    // Đảm bảo cửa sổ đảo luôn nổi lên trên cùng khi ở màn hình khóa
-    if (islandWindow) {
-        [islandWindow makeKeyAndVisible];
+    if (self == islandWindow) {
+        CGRect screenRect = [UIScreen mainScreen].bounds;
+        islandWindow.frame = screenRect;
+        [[DIHIslandView sharedInstance] updateLayoutForCurrentDevice];
     }
-}
-- (void)_handleBiometricEvent:(unsigned long long)event {
-    %orig;
-    [[DIHIslandView sharedInstance] triggerFaceIDAnimation];
-}
-%end
-
-%hook SiriUICommandHandler
-- (void)handleSiriDidActivate {
-    %orig;
-    [[DIHIslandView sharedInstance] setSiriActive:YES];
-}
-- (void)handleSiriDidDeactivate {
-    %orig;
-    [[DIHIslandView sharedInstance] setSiriActive:NO];
-}
-%end
-
-%hook SBUIController
-- (void)updateBatteryState {
-    %orig;
-    [[DIHIslandView sharedInstance] updateBatteryState];
-}
-%end
-
-%hook RPScreenRecorder
-- (void)setRecording:(BOOL)recording {
-    %orig;
-    [[DIHIslandView sharedInstance] setRecordingState:recording];
 }
 %end
 
@@ -443,17 +370,20 @@ static DIHPassThroughWindow *islandWindow = nil;
 %hook SpringBoard
 - (void)applicationDidFinishLaunching:(id)application {
     %orig;
-    
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (!islandWindow) {
-            islandWindow = [[DIHPassThroughWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-            islandWindow.windowLevel = UIWindowLevelStatusBar;
+            CGRect screenRect = [UIScreen mainScreen].bounds;
+            islandWindow = [[DIHPassThroughWindow alloc] initWithFrame:screenRect];
+            
+            // Đẩy mức cửa sổ lên cao hơn cả màn hình khóa và trung tâm thông báo (UIWindowLevelStatusBar + 100)
+            islandWindow.windowLevel = UIWindowLevelStatusBar + 100;
             islandWindow.backgroundColor = [UIColor clearColor];
             islandWindow.userInteractionEnabled = YES;
             islandWindow.hidden = NO;
             
             DIHIslandView *island = [DIHIslandView sharedInstance];
             [islandWindow addSubview:island];
+            [islandWindow makeKeyAndVisible];
         }
     });
 }
