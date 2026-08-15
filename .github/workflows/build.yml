@@ -13,7 +13,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Theos
-        uses: meowcut/setup-theos@v2
+        uses: theos/setup-theos@main
 
       - name: Build Package
         run: |
