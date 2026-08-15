@@ -1,9 +1,9 @@
-Package: com.yourname.dynamicislandhome
-Name: DynamicIslandHome
+Package: com.hdang.dynamicbyhdang
+Name: Dynamic by HDang
 Depends: mobilesubstrate
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Dynamic Island cho iOS
-Maintainer: YourName
-Author: YourName
+Description: Dynamic Island cho iOS tạo bởi HDang
+Maintainer: HDang
+Author: HDang
 Section: Tweaks
