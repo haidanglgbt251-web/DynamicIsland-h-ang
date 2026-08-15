@@ -11,7 +11,35 @@ extern "C" {
 #endif
 
 // ==========================================
-// DYNAMIC ISLAND VIEW - ULTRA SMOOTH ANIMATION
+// PASS-THROUGH WINDOW (HỖ TRỢ CẢ MÀN HÌNH KHÓA)
+// ==========================================
+
+@interface DIHPassThroughWindow : UIWindow
+@end
+
+@implementation DIHPassThroughWindow
+- (BOOL)_pointInside:(CGPoint)point windowServerHitTestWindow:(id)arg2 {
+    UIView *island = [self.subviews firstObject];
+    if (island) {
+        CGPoint pointInIsland = [island convertPoint:point fromView:self];
+        if ([island pointInside:pointInIsland withEvent:nil]) {
+            return YES; // Bấm trúng đảo -> Nhận cảm ứng
+        }
+    }
+    return NO; // Bấm ra ngoài (đồng hồ màn hình khóa, thông báo) -> Xuyên xuống dưới
+}
+
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hitView = [super hitTest:point withEvent:event];
+    if (hitView == self) {
+        return nil;
+    }
+    return hitView;
+}
+@end
+
+// ==========================================
+// DYNAMIC ISLAND VIEW
 // ==========================================
 
 @interface DIHIslandView : UIView <UIGestureRecognizerDelegate>
@@ -64,6 +92,7 @@ extern "C" {
         self.userInteractionEnabled = YES;
         self.layer.borderWidth = 0.5;
         self.layer.borderColor = [UIColor colorWithWhite:0.18 alpha:0.8].CGColor;
+        self.currentMode = @"Idle";
 
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap)];
         UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
@@ -153,6 +182,10 @@ extern "C" {
     self.declineCallButton.alpha = 0.0;
     self.faceIDIconView.alpha = 0.0;
     self.siriGlowView.alpha = 0.0;
+    
+    if (![self.currentMode isEqualToString:@"Recording"]) {
+        self.currentMode = @"Idle";
+    }
 }
 
 - (void)triggerFaceIDAnimation {
@@ -162,7 +195,6 @@ extern "C" {
     [UIView animateWithDuration:0.5 delay:0 usingSpringWithDamping:0.62 initialSpringVelocity:0.8 options:UIViewAnimationOptionCurveEaseInOut animations:^{
         self.frame = CGRectMake((screenWidth - 95) / 2, 10, 95, 95);
         self.layer.cornerRadius = 30;
-        
         self.faceIDIconView.frame = CGRectMake(27, 27, 41, 41);
         self.faceIDIconView.alpha = 1.0;
     } completion:^(BOOL finished) {
@@ -183,7 +215,6 @@ extern "C" {
         [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.7 initialSpringVelocity:0.6 options:UIViewAnimationOptionCurveEaseInOut animations:^{
             self.frame = CGRectMake((screenWidth - 170) / 2, 10, 170, 44);
             self.layer.cornerRadius = 22;
-            
             self.siriGlowView.frame = self.bounds;
             self.siriGlowView.alpha = 0.85;
             self.titleLabel.text = @"Siri đang nghe...";
@@ -357,7 +388,20 @@ extern "C" {
 
 @end
 
+// ==========================================
+// HOOKS ĐẢM BẢO HIỂN THỊ CẢ MÀN HÌNH KHÓA
+// ==========================================
+
+static DIHPassThroughWindow *islandWindow = nil;
+
 %hook SBLockScreenManager
+- (void)lockScreenViewDidAppear:(id)arg1 {
+    %orig;
+    // Đảm bảo cửa sổ đảo luôn nổi lên trên cùng khi ở màn hình khóa
+    if (islandWindow) {
+        [islandWindow makeKeyAndVisible];
+    }
+}
 - (void)_handleBiometricEvent:(unsigned long long)event {
     %orig;
     [[DIHIslandView sharedInstance] triggerFaceIDAnimation];
@@ -396,21 +440,21 @@ extern "C" {
 }
 %end
 
-static UIWindow *islandWindow = nil;
-
 %hook SpringBoard
 - (void)applicationDidFinishLaunching:(id)application {
     %orig;
     
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        islandWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-        islandWindow.windowLevel = UIWindowLevelStatusBar + 1;
-        islandWindow.backgroundColor = [UIColor clearColor];
-        islandWindow.userInteractionEnabled = YES;
-        islandWindow.hidden = NO;
-        
-        DIHIslandView *island = [DIHIslandView sharedInstance];
-        [islandWindow addSubview:island];
+        if (!islandWindow) {
+            islandWindow = [[DIHPassThroughWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+            islandWindow.windowLevel = UIWindowLevelStatusBar;
+            islandWindow.backgroundColor = [UIColor clearColor];
+            islandWindow.userInteractionEnabled = YES;
+            islandWindow.hidden = NO;
+            
+            DIHIslandView *island = [DIHIslandView sharedInstance];
+            [islandWindow addSubview:island];
+        }
     });
 }
 %end
