@@ -1,6 +1,5 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
-#import <AudioToolbox/AudioToolbox.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -13,7 +12,7 @@ extern "C" {
 #endif
 
 // ==========================================
-// CỬA SỔ XUYÊN THẤU & LUÔN NỔI TRÊN MỌI LỚP
+// CỬA SỔ XUYÊN THẤU TƯƠNG TÁC
 // ==========================================
 
 @interface DIHPassThroughWindow : UIWindow
@@ -39,33 +38,30 @@ extern "C" {
 @end
 
 // ==========================================
-// DYNAMIC ISLAND VIEW (MAX SETTING)
+// DYNAMIC ISLAND VIEW (CHUẨN GIAO DIỆN GỐC)
 // ==========================================
 
-@interface DIHIslandView : UIView <UIGestureRecognizerDelegate>
+@interface DIHIslandView : UIView
 
-@property (nonatomic, strong) UIImageView *leadingImageView;   
-@property (nonatomic, strong) UIImageView *trailingImageView;  
-@property (nonatomic, strong) UILabel *titleLabel;             
-@property (nonatomic, strong) UILabel *subtitleLabel;          
+@property (nonatomic, strong) UIImageView *leadingImageView;   // Ảnh bìa nhạc / Biểu tượng trạng thái
+@property (nonatomic, strong) UIImageView *trailingImageView;  // Sóng nhạc / Icon phụ
+@property (nonatomic, strong) UILabel *titleLabel;             // Tên bài hát / Tiêu đề cuộc gọi / Hẹn giờ
+@property (nonatomic, strong) UILabel *subtitleLabel;          // Nghệ sĩ / Trạng thái phụ
 
 @property (nonatomic, strong) UIButton *playPauseButton;
 @property (nonatomic, strong) UIButton *prevButton;
 @property (nonatomic, strong) UIButton *nextButton;
 
-@property (nonatomic, strong) UIImageView *statusIconView;
-@property (nonatomic, strong) UILabel *timerLabel;
+@property (nonatomic, strong) UIButton *acceptCallButton;      // Nút nhận cuộc gọi
+@property (nonatomic, strong) UIButton *declineCallButton;     // Nút từ chối cuộc gọi
 
 @property (nonatomic, assign) BOOL isExpanded;
-@property (nonatomic, assign) BOOL isFloatingMode;
-@property (nonatomic, strong) NSString *currentMode; 
+@property (nonatomic, strong) NSString *currentMode;           // "Music", "Timer", "Call", "Battery", "Idle"
 
 + (instancetype)sharedInstance;
 - (void)expandIsland;
 - (void)collapseIsland;
 - (void)updateLayoutForCurrentDevice;
-- (void)updateNowPlayingInfo;
-- (void)showNotificationWithTitle:(NSString *)title subtitle:(NSString *)subtitle image:(UIImage *)image color:(UIColor *)color;
 
 @end
 
@@ -87,17 +83,13 @@ extern "C" {
         self.layer.masksToBounds = YES;
         self.userInteractionEnabled = YES;
         self.layer.borderWidth = 0.5;
-        self.layer.borderColor = [UIColor colorWithWhite:0.18 alpha:0.8].CGColor;
-        self.currentMode = @"Idle";
+        self.layer.borderColor = [UIColor colorWithWhite:0.2 alpha:1.0].CGColor;
+        self.currentMode = @"Music";
 
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap)];
-        UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
-        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-        
         [self addGestureRecognizer:tap];
-        [self addGestureRecognizer:longPress];
-        [self addGestureRecognizer:pan];
 
+        // Thành phần giao diện
         self.leadingImageView = [[UIImageView alloc] init];
         self.leadingImageView.clipsToBounds = YES;
         self.leadingImageView.contentMode = UIViewContentModeScaleAspectFill;
@@ -106,10 +98,6 @@ extern "C" {
         self.trailingImageView = [[UIImageView alloc] init];
         self.trailingImageView.contentMode = UIViewContentModeScaleAspectFit;
         [self addSubview:self.trailingImageView];
-
-        self.statusIconView = [[UIImageView alloc] init];
-        self.statusIconView.contentMode = UIViewContentModeScaleAspectFit;
-        [self addSubview:self.statusIconView];
 
         self.titleLabel = [[UILabel alloc] init];
         self.titleLabel.textColor = [UIColor whiteColor];
@@ -121,28 +109,17 @@ extern "C" {
         self.subtitleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
         [self addSubview:self.subtitleLabel];
 
-        self.timerLabel = [[UILabel alloc] init];
-        self.timerLabel.textColor = [UIColor systemOrangeColor];
-        self.timerLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-        [self addSubview:self.timerLabel];
+        // Nút điều khiển nhạc
+        self.playPauseButton = [self createButtonWithImage:@"pause.fill" action:@selector(togglePlayPause)];
+        self.prevButton = [self createButtonWithImage:@"backward.fill" action:@selector(skipPrev)];
+        self.nextButton = [self createButtonWithImage:@"forward.fill" action:@selector(skipNext)];
 
-        self.playPauseButton = [UIButton buttonWithType:UIButtonTypeCustom];
-        [self.playPauseButton setImage:[UIImage systemImageNamed:@"pause.fill"] forState:UIControlStateNormal];
-        [self.playPauseButton setTintColor:[UIColor whiteColor]];
-        [self.playPauseButton addTarget:self action:@selector(togglePlayPause) forControlEvents:UIControlEventTouchUpInside];
-        [self addSubview:self.playPauseButton];
-
-        self.prevButton = [UIButton buttonWithType:UIButtonTypeCustom];
-        [self.prevButton setImage:[UIImage systemImageNamed:@"backward.fill"] forState:UIControlStateNormal];
-        [self.prevButton setTintColor:[UIColor whiteColor]];
-        [self.prevButton addTarget:self action:@selector(skipPrev) forControlEvents:UIControlEventTouchUpInside];
-        [self addSubview:self.prevButton];
-
-        self.nextButton = [UIButton buttonWithType:UIButtonTypeCustom];
-        [self.nextButton setImage:[UIImage systemImageNamed:@"forward.fill"] forState:UIControlStateNormal];
-        [self.nextButton setTintColor:[UIColor whiteColor]];
-        [self.nextButton addTarget:self action:@selector(skipNext) forControlEvents:UIControlEventTouchUpInside];
-        [self addSubview:self.nextButton];
+        // Nút cuộc gọi
+        self.acceptCallButton = [self createButtonWithImage:@"phone.fill" action:@selector(acceptCall)];
+        self.acceptCallButton.backgroundColor = [UIColor systemGreenColor];
+        
+        self.declineCallButton = [self createButtonWithImage:@"phone.down.fill" action:@selector(declineCall)];
+        self.declineCallButton.backgroundColor = [UIColor systemRedColor];
 
         [self updateLayoutForCurrentDevice];
         [self setupListeners];
@@ -150,10 +127,18 @@ extern "C" {
     return self;
 }
 
+- (UIButton *)createButtonWithImage:(NSString *)imageName action:(SEL)action {
+    UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
+    [btn setImage:[UIImage systemImageNamed:imageName] forState:UIControlStateNormal];
+    [btn setTintColor:[UIColor whiteColor]];
+    [btn addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:btn];
+    return btn;
+}
+
 - (void)updateLayoutForCurrentDevice {
     CGRect screenRect = [UIScreen mainScreen].bounds;
-    UIInterfaceOrientation orientation = [[UIApplication sharedApplication] statusBarOrientation];
-    CGFloat screenWidth = UIInterfaceOrientationIsLandscape(orientation) ? MAX(screenRect.size.width, screenRect.size.height) : MIN(screenRect.size.width, screenRect.size.height);
+    CGFloat screenWidth = MIN(screenRect.size.width, screenRect.size.height);
 
     CGFloat islandWidth = 125.0; 
     CGFloat islandHeight = 36.0;
@@ -162,28 +147,26 @@ extern "C" {
     self.frame = CGRectMake((screenWidth - islandWidth) / 2, topMargin, islandWidth, islandHeight);
     self.layer.cornerRadius = islandHeight / 2.0;
 
+    // Ẩn tất cả khi thu gọn
     self.leadingImageView.alpha = 0.0;
     self.trailingImageView.alpha = 0.0;
-    self.statusIconView.alpha = 0.0;
     self.titleLabel.alpha = 0.0;
     self.subtitleLabel.alpha = 0.0;
-    self.timerLabel.alpha = 0.0;
     self.playPauseButton.alpha = 0.0;
     self.prevButton.alpha = 0.0;
     self.nextButton.alpha = 0.0;
-    
-    if (![self.currentMode isEqualToString:@"Music"]) {
-        self.currentMode = @"Idle";
-    }
+    self.acceptCallButton.alpha = 0.0;
+    self.declineCallButton.alpha = 0.0;
 }
 
+// ==========================================
+// HIỆU ỨNG SPRING DAMPING (BUNG NỞ MƯỢT MÀ)
+// ==========================================
 - (void)expandIsland {
     if (self.isExpanded) return;
     
     CGRect screenRect = [UIScreen mainScreen].bounds;
-    UIInterfaceOrientation orientation = [[UIApplication sharedApplication] statusBarOrientation];
-    CGFloat screenWidth = UIInterfaceOrientationIsLandscape(orientation) ? MAX(screenRect.size.width, screenRect.size.height) : MIN(screenRect.size.width, screenRect.size.height);
-    
+    CGFloat screenWidth = MIN(screenRect.size.width, screenRect.size.height);
     CGFloat expandedWidth = screenWidth - 28;
     CGFloat expandedHeight = 115.0;
     
@@ -206,18 +189,41 @@ extern "C" {
             CGFloat centerX = expandedWidth / 2;
             self.prevButton.frame = CGRectMake(centerX - 65, btnY, 32, 32);
             self.prevButton.alpha = 1.0;
+            
             self.playPauseButton.frame = CGRectMake(centerX - 16, btnY, 32, 32);
             self.playPauseButton.alpha = 1.0;
+            
             self.nextButton.frame = CGRectMake(centerX + 33, btnY, 32, 32);
             self.nextButton.alpha = 1.0;
-        } else if ([self.currentMode isEqualToString:@"Alert"]) {
-            self.leadingImageView.frame = CGRectMake(20, 35, 45, 45);
+        } else if ([self.currentMode isEqualToString:@"Call"]) {
+            self.leadingImageView.frame = CGRectMake(16, 16, 45, 45);
+            self.leadingImageView.layer.cornerRadius = 22.5;
             self.leadingImageView.alpha = 1.0;
             
-            self.titleLabel.frame = CGRectMake(78, 28, expandedWidth - 90, 22);
+            self.titleLabel.frame = CGRectMake(72, 18, expandedWidth - 140, 20);
             self.titleLabel.alpha = 1.0;
             
-            self.subtitleLabel.frame = CGRectMake(78, 52, expandedWidth - 90, 20);
+            self.subtitleLabel.frame = CGRectMake(72, 40, expandedWidth - 140, 18);
+            self.subtitleLabel.alpha = 1.0;
+            
+            self.declineCallButton.frame = CGRectMake(expandedWidth - 100, 22, 36, 36);
+            self.declineCallButton.layer.cornerRadius = 18;
+            self.declineCallButton.alpha = 1.0;
+            
+            self.acceptCallButton.frame = CGRectMake(expandedWidth - 52, 22, 36, 36);
+            self.acceptCallButton.layer.cornerRadius = 18;
+            self.acceptCallButton.alpha = 1.0;
+        } else if ([self.currentMode isEqualToString:@"Timer"]) {
+            self.leadingImageView.image = [UIImage systemImageNamed:@"timer"];
+            self.leadingImageView.tintColor = [UIColor systemOrangeColor];
+            self.leadingImageView.frame = CGRectMake(18, 20, 32, 32);
+            self.leadingImageView.alpha = 1.0;
+            
+            self.titleLabel.text = @"Hẹn giờ";
+            self.titleLabel.frame = CGRectMake(62, 18, 120, 20);
+            self.titleLabel.alpha = 1.0;
+            
+            self.subtitleLabel.frame = CGRectMake(62, 40, 120, 24);
             self.subtitleLabel.alpha = 1.0;
         }
     } completion:^(BOOL finished) {
@@ -236,53 +242,30 @@ extern "C" {
 }
 
 - (void)handleTap {
-    if (self.isFloatingMode) return;
     if (self.isExpanded) {
         [self collapseIsland];
-    } else if ([self.currentMode isEqualToString:@"Music"]) {
+    } else {
         [self expandIsland];
     }
 }
 
-- (void)handleLongPress:(UILongPressGestureRecognizer *)gesture {
-    if (gesture.state == UIGestureRecognizerStateBegan) {
-        [self toggleFloatingMode];
-    }
-}
-
-- (void)handlePan:(UIPanGestureRecognizer *)pan {
-    if (!self.isFloatingMode && !self.isExpanded) return;
-    CGPoint translation = [pan translationInView:self.superview];
-    self.center = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
-    [pan setTranslation:CGPointZero inView:self.superview];
-}
-
-- (void)toggleFloatingMode {
-    self.isFloatingMode = !self.isFloatingMode;
-    [UIView animateWithDuration:0.45 animations:^{
-        if (self.isFloatingMode) {
-            self.frame = CGRectMake(20, 80, 140, 65);
-            self.layer.cornerRadius = 20;
-        } else {
-            [self updateLayoutForCurrentDevice];
-        }
-    }];
-}
-
+// ==========================================
+// CƠ CHẾ LẮNG NGHE SỰ KIỆN HỆ THỐNG
+// ==========================================
 - (void)setupListeners {
-    // 1. Lắng nghe nhạc
+    // 1. Bắt nhạc
     MRMediaRemoteRegisterForNowPlayingNotifications(dispatch_get_main_queue());
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateNowPlayingInfo) name:@"kMRMediaRemoteNowPlayingInfoDidChangeNotification" object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateNowPlayingInfo) name:@"kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification" object:nil];
-    [NSTimer scheduledTimerWithTimeInterval:1.5 target:self selector:@selector(updateNowPlayingInfo) userInfo:nil repeats:YES];
+    [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(updateNowPlayingInfo) userInfo:nil repeats:YES];
 
-    // 2. Lắng nghe trạng thái Sạc pin
+    // 2. Bắt trạng thái sạc pin
     [[UIDevice currentDevice] setBatteryMonitoringEnabled:YES];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(batteryStateDidChange) name:UIDeviceBatteryStateDidChangeNotification object:nil];
 }
 
 - (void)updateNowPlayingInfo {
-    if ([self.currentMode isEqualToString:@"Alert"]) return; // Đang hiện thông báo pin/mute thì ưu tiên
+    if ([self.currentMode isEqualToString:@"Call"] || [self.currentMode isEqualToString:@"Timer"]) return;
     
     MRMediaRemoteGetNowPlayingInfo(dispatch_get_main_queue(), ^(CFDictionaryRef information) {
         NSDictionary *info = (__bridge NSDictionary *)information;
@@ -320,36 +303,37 @@ extern "C" {
     int batteryLevel = (int)([[UIDevice currentDevice] batteryLevel] * 100);
     
     if (state == UIDeviceBatteryStateCharging || state == UIDeviceBatteryStateFull) {
-        NSString *sub = [NSString stringWithFormat:@"Đang sạc • %d%%", batteryLevel];
-        [self showNotificationWithTitle:@"Đã cắm sạc" subtitle:sub image:[UIImage systemImageNamed:@"bolt.fill"] color:[UIColor systemGreenColor]];
+        self.currentMode = @"Timer";
+        self.leadingImageView.image = [UIImage systemImageNamed:@"bolt.fill"];
+        self.leadingImageView.tintColor = [UIColor systemGreenColor];
+        self.titleLabel.text = @"Đang sạc";
+        self.subtitleLabel.text = [NSString stringWithFormat:@"%d%%", batteryLevel];
+        [self expandIsland];
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self collapseIsland];
+        });
     }
 }
 
-- (void)showNotificationWithTitle:(NSString *)title subtitle:(NSString *)subtitle image:(UIImage *)image color:(UIColor *)color {
-    self.currentMode = @"Alert";
-    self.titleLabel.text = title;
-    self.subtitleLabel.text = subtitle;
-    self.leadingImageView.image = image;
-    self.leadingImageView.tintColor = color;
-    
+// Hàm kích hoạt thủ công chế độ Hẹn giờ (Mô phỏng giống video)
+- addTimerModeWithDuration:(NSString *)duration {
+    self.currentMode = @"Timer";
+    self.subtitleLabel.text = duration;
     [self expandIsland];
-    
-    // Tự động thu gọn sau 3.5 giây
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if ([self.currentMode isEqualToString:@"Alert"]) {
-            [self collapseIsland];
-        }
-    });
 }
 
+// Hành động bấm nút thực tế
 - (void)togglePlayPause { MRMediaRemoteSendCommand(0, nil); }
 - (void)skipPrev { MRMediaRemoteSendCommand(4, nil); }
 - (void)skipNext { MRMediaRemoteSendCommand(3, nil); }
+- (void)acceptCall { [self collapseIsland]; }
+- (void)declineCall { [self collapseIsland]; }
 
 @end
 
 // ==========================================
-// HOOKS KHỞI TẠO & MÀN HÌNH KHÓA (iOS 14 - 15)
+// HOOKS GIAO DIỆN HỆ THỐNG
 // ==========================================
 
 static DIHPassThroughWindow *islandWindow = nil;
