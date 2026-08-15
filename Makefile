@@ -5,11 +5,11 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = DynamicIslandHome
+TWEAK_NAME = DynamicByHDang
 
-DynamicIslandHome_FILES = Tweak.xm
-DynamicIslandHome_CFLAGS = -fobjc-arc -w
-DynamicIslandHome_FRAMEWORKS = UIKit CoreGraphics QuartzCore AVFoundation TelephonyUI ReplayKit LocalAuthentication
-DynamicIslandHome_PRIVATE_FRAMEWORKS = MediaRemote TelephonyUtilities
+DynamicByHDang_FILES = Tweak.xm
+DynamicByHDang_CFLAGS = -fobjc-arc -w
+DynamicByHDang_FRAMEWORKS = UIKit CoreGraphics QuartzCore AVFoundation TelephonyUI ReplayKit LocalAuthentication
+DynamicByHDang_PRIVATE_FRAMEWORKS = MediaRemote TelephonyUtilities
 
 include $(THEOS_MAKE_PATH)/tweak.mk
