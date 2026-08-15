@@ -17,15 +17,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential clang git perl make libssl-dev curl
 
-      - name: Setup Theos and Build
+      - name: Setup Theos
         run: |
-          # 1. Cài đặt Theos (Script đã tự động tải trọn bộ SDK)
+          # Cài đặt Theos chuẩn
           bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
           
-          # 2. Đặt biến môi trường
-          export THEOS=$HOME/theos
+          # Đăng ký biến THEOS vào môi trường GitHub Actions
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-          # 3. Tiến hành Build gói .deb
+      - name: Build Package
+        run: |
           $THEOS/bin/make package FINALPACKAGE=1
 
       - name: Upload DEB Artifact
