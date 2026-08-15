@@ -17,21 +17,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential clang git perl make libssl-dev unzip
 
-      - name: Setup Theos
+      - name: Setup Theos and Build
         run: |
+          # 1. Tải Theos
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          export THEOS=$HOME/theos
           
-          # Tải SDK iOS chuẩn định dạng zip
-          mkdir -p $HOME/theos/sdks
+          # 2. Tải SDK iOS
+          mkdir -p $THEOS/sdks
           curl -LO https://github.com/theos/sdks/archive/refs/heads/master.zip
-          unzip master.zip
-          mv sdks-master/* $HOME/theos/sdks/
+          unzip -q master.zip
+          mv sdks-master/* $THEOS/sdks/
           rm -rf sdks-master master.zip
 
-      - name: Build Package
-        run: |
-          $HOME/theos/bin/make package FINALPACKAGE=1
+          # 3. Tiến hành Build Package
+          $THEOS/bin/make package FINALPACKAGE=1
 
       - name: Upload DEB Artifact
         uses: actions/upload-artifact@v4
