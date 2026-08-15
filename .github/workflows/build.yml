@@ -10,17 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Theos
-        uses: meowcut/setup-theos@v1
+        uses: meowcut/setup-theos@v2
 
       - name: Build Package
         run: |
           make package FINALPACKAGE=1
 
       - name: Upload DEB Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Dynamic-by-HDang-DEB
           path: packages/*.deb
