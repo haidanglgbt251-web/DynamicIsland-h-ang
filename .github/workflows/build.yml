@@ -19,16 +19,13 @@ jobs:
 
       - name: Setup Theos
         run: |
-          # Cài đặt Theos chuẩn
           bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
-          
-          # Đăng ký biến THEOS vào môi trường GitHub Actions
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
       - name: Build Package
         run: |
-          $THEOS/bin/make package FINALPACKAGE=1
-
+          make package FINALPACKAGE=1 THEOS=$THEOS
+          
       - name: Upload DEB Artifact
         uses: actions/upload-artifact@v4
         with:
