@@ -15,22 +15,24 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang git perl make libssl-dev unzip
+          sudo apt-get install -y build-essential clang git perl make libssl-dev unzip curl
 
       - name: Setup Theos and Build
         run: |
-          # 1. Tải Theos
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          # 1. Cài đặt Theos chuẩn bằng script chính thức
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+          
+          # 2. Thiết lập đường dẫn THEOS
           export THEOS=$HOME/theos
           
-          # 2. Tải SDK iOS
+          # 3. Tải bộ SDK iOS chuẩn
           mkdir -p $THEOS/sdks
           curl -LO https://github.com/theos/sdks/archive/refs/heads/master.zip
           unzip -q master.zip
           mv sdks-master/* $THEOS/sdks/
           rm -rf sdks-master master.zip
 
-          # 3. Tiến hành Build Package
+          # 4. Tiến hành Build gói .deb
           $THEOS/bin/make package FINALPACKAGE=1
 
       - name: Upload DEB Artifact
