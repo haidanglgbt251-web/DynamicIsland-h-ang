@@ -1,8 +1,14 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-EXTERN_C void MRMediaRemoteRegisterForNowPlayingNotifications(dispatch_queue_t queue);
-EXTERN_C void MRMediaRemoteGetNowPlayingInfo(dispatch_queue_t queue, void (^completed)(CFDictionaryRef information));
+#ifdef __cplusplus
+extern "C" {
+#endif
+    void MRMediaRemoteRegisterForNowPlayingNotifications(dispatch_queue_t queue);
+    void MRMediaRemoteGetNowPlayingInfo(dispatch_queue_t queue, void (^completed)(CFDictionaryRef information));
+#ifdef __cplusplus
+}
+#endif
 
 // ==========================================
 // DYNAMIC ISLAND VIEW - ULTRA SMOOTH ANIMATION
