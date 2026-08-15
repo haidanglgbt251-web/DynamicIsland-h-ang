@@ -22,5 +22,5 @@ jobs:
       - name: Upload DEB Artifact
         uses: actions/upload-artifact@v3
         with:
-          name: DynamicIslandHome-DEB
+          name: Dynamic-by-HDang-DEB
           path: packages/*.deb
